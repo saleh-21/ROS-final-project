@@ -1,0 +1,415 @@
+#!/usr/bin/env python
+import rospy
+import actionlib
+from move_base_msgs.msg import *
+from std_msgs.msg import Float64
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import LaserScan
+import tf
+import time
+import numpy as np
+
+def find_shortest_path(graph, start, end, path=[]):
+        path = path + [start]
+        if start == end:
+            return path
+        shortest = None
+        for node in graph[start]:
+            if node not in path:
+                newpath = find_shortest_path(graph, node, end, path)
+                if newpath:
+                    if not shortest or len(newpath) < len(shortest):
+                        shortest = newpath
+        return shortest
+
+def strToNum(argument): 
+        switcher = { 
+            "r": "8", 
+            "b": "13", 
+            "g": "29", 
+            "p": "30",
+        }
+        return switcher.get(argument, "nothing")
+class FourColors():
+    
+    def __init__(self):
+        self.stopNow = False
+        self.shouldStop = True
+        self.goAgain = False
+        self.laserFront = 0.0
+        print(5)
+        self.stop = rospy.Subscriber('stop',Float64,self.test,queue_size=1)
+        self.odometry = rospy.Subscriber('/odom', Odometry, self.getOdom,queue_size=1)
+        self.laser = rospy.Subscriber('/scan',LaserScan,self.getLaser,queue_size=1)
+        self.movebase_client()
+    
+    def getOdom(self,msg):
+        self.currX = msg.pose.pose.position.x
+        self.CurrY = msg.pose.pose.position.y
+        self.currZ = msg.pose.pose.orientation.z
+        self.currW = msg.pose.pose.orientation.w
+
+
+    def getLaser(self,msg):
+        # print (np.amin(msg.ranges[270]))
+        min1 = np.amin(msg.ranges[0:15])
+        min2 = np.amin(msg.ranges[345:359])
+        self.laserFront = np.amin([min1,min2])
+    
+
+    def test(self,msg):
+        if self.laserFront > 1.5:
+            self.stopNow = True
+        # print("I see")
+        
+
+    
+
+        
+        
+    def movebase_client(self):
+  
+        nodes = [
+            [0.3,-4.327],#0
+            [3.4,-4.327],
+            [3.4,-0.4],#######
+            [3.4,0.142],
+            [3.4,4.3],
+            [0.3,4.3],#5
+            [-0.28,4.3],
+            [-3.3,4.3],
+            [-3.3,2.9],
+            [-3.3,0.142],
+            [-3.3,-0.4],#10#
+            [-3.3,-4.327],
+            [-0.28,-4.327],
+            [1.9,-3.8],
+            [2.93,-3.8],
+            [2.93,-0.4],#15#####
+            [2.93,0.142],
+            [2.93,3.458],
+            [0.3,3.458],
+            [-0.28,3.458],
+            [-2.91,3.458],#20
+            [-2.91,0.142],
+            [-2.91,-0.4],###
+            [-2.91,-3.8],
+            [-0.28,-3.8],
+            [0.3,-3.8],#25
+            [0.3,-0.4],####
+            [0.3,0.142],
+            [-0.28,0.142],
+            [-0.28,-0.4],###
+            [0.3,2.57]]#30
+        graph = {"0": {"1", "26","27"},
+             "1": {"3"},
+             "2": {"4"},
+             "3": {"4","27","28"},
+             "4": {"6"},
+             "5": {"7"},
+             "6": {"7","28","29"},
+             "7": {"8","10"},
+             "8": {"10"},
+             "9": {"11"},
+             "10": {"11","29","26"},
+             "11": {"0"},
+             "12": {"1"},
+             "13": {"25","24"},
+             "14": {"13"},
+             "15": {"14","2"},              
+             "16": {"27","28","14"},
+             "17": {"16","15"},
+             "18": {"17","5"},
+             "19": {"28","17","29"},
+             "20": {"19","18"},
+             "21": {"20","9"},
+             "22": {"29","20","26"},
+             "23": {"22","21"},
+             "24": {"23","12"},
+             "25": {"26","27","23"},
+             "26": {"15","27","2","30","18","5"},
+             "27": {"28","30","18","5","21","9"},
+             "28": {"21","9","29","24","12"},
+             "29": {"24","12","26","15","2"},
+             "30": {"18","5"}}
+
+        startPoint = "3"
+        
+        print("etner travelig route by colours - r , g , b , p:")
+        c1 = strToNum(raw_input("Enter 1st stop colour: ")) 
+        c2 = strToNum(raw_input("Enter 2nd stop colour: ")) 
+        c3 = strToNum(raw_input("Enter 3rd stop colour: ")) 
+        # c4 = strToNum(raw_input("Enter 4th stop colour: ")) 
+        result = []
+
+
+
+        ops = find_shortest_path(graph,startPoint,c1)
+        print(ops)
+        result.extend(ops)
+
+        ops = find_shortest_path(graph,c1,c2)
+
+        print(ops)
+        result.extend(ops[1::])
+
+        ops = find_shortest_path(graph,c2,c3)
+        print(ops)
+        result.extend(ops[1::])
+
+        # ops = find_shortest_path(graph,c3,c4)
+        # print(ops)
+        # result.extend(ops[1::])
+
+        print("our path",result)
+
+
+
+       
+        self.client = actionlib.SimpleActionClient('move_base',MoveBaseAction)
+        self.client.wait_for_server()
+        # path =["3","27","30"]
+        path = result
+        path.append(path[len(path)-1])
+        i=0
+        while i< len(path):
+            if self.goAgain==True:
+                i-=1
+                self.goAgain = False
+            print (i)
+            x1 = path[i]
+            x1 = int(x1)
+            z=0
+            w=0
+            pos=[self.currX,self.CurrY]
+            node = nodes[x1]
+            print(node)
+            if i!=len(path)-1:
+                x2 = path[i+1]
+                x2 = int(x2)
+                z,w = self.findyaw(node,nodes[x2],pos)
+            goal = MoveBaseGoal()
+            goal.target_pose.header.frame_id = "map"
+            goal.target_pose.header.stamp = rospy.Time.now()
+            goal.target_pose.pose.position.x = node[0]
+            goal.target_pose.pose.position.y = node[1]
+            goal.target_pose.pose.orientation.x = 0.0
+            goal.target_pose.pose.orientation.y = 0.0
+            goal.target_pose.pose.orientation.z = z
+            goal.target_pose.pose.orientation.w = w
+            self.client.send_goal(goal)
+            state = self.client.get_state()
+            print("stopNow",self.stopNow)
+            print("shuldStop",self.shouldStop)
+            print("state",state)
+            print("frontLaser",self.laserFront)
+            print("goAgain",self.goAgain)
+            while(state!=3):
+                if self.stopNow==True and self.shouldStop==True and self.goAgain==False : #and self.laserFront > 2.0
+                    break
+                elif self.laserFront < 0.7 and self.laserFront >0.0:
+                    break
+                else:
+                    state = self.client.get_state()
+                    continue
+            
+            print("stopNow2",self.stopNow)
+            print("state2",state)
+            print("frontLaser2",self.laserFront)
+            print("shuldStop2",self.shouldStop)
+            print("goAgain2",self.goAgain)
+            if self.laserFront < 0.7:
+                self.avoidObstacle(self.currX,self.CurrY,self.currZ,self.currW)
+                self.goAgain = True
+                i+=1
+                continue
+
+            elif self.stopNow==True and self.shouldStop==True and self.goAgain==False :#and self.laserFront > 2.0
+                print("stoped")
+                self.client.cancel_goal()
+                time.sleep(3)
+                self.stopNow=False
+                self.shouldStop=False
+                self.goAgain = True
+                i+=1
+                continue
+            self.stopNow=False
+            self.goAgain=False
+            i+=1
+          
+
+    def avoidObstacle(self,x,y,z,w):
+        x = self.currX
+        y = self.CurrY
+        print("tring to avoid")
+        self.client.cancel_goal
+        dir = self.direction(z,w)
+        
+ 
+
+        if dir == 2:
+            z1 = 0.0
+            w1 = 1.0
+
+            x2 = x + 0.5
+            y2 = y
+            z2 = -0.707
+            w2 = 0.707
+
+            x3 = x2
+            y3 = y2 - 1.8
+            z3 = 1.0
+            w3 = 0.0
+
+            x4 = x
+            y4 = y - 1.8
+            z4 = -0.707
+            w4 = 0.707
+            
+        elif dir == 3:
+            z1 = 0.707
+            w1 = 0.707
+
+            x2 = x
+            y2 = y + 0.5
+            z2 = 0.0
+            w2 = 1.0
+
+            x3 = x2 + 1.8
+            y3 = y2
+            z3 = -0.707
+            w3 = 0.707
+
+            x4 = x + 1.8
+            y4 = y
+            z4 = 0.0
+            w4 = 1.0
+
+        elif dir == 4:
+            z1 = -0.707
+            w1 = 0.707
+
+            x2 = x
+            y2 = y - 0.5
+            z2 = 1.0
+            w2 = 0.0
+
+            x3 = x2 - 1.8
+            y3 = y2
+            z3 = 0.707
+            w3 = 0.707
+
+            x4 = x - 1.8
+            y4 = y
+            z4 = 1.0
+            w4 = 0.0
+        else:
+            
+            z1 = 1.0
+            w1 = 0.0
+
+            x2 = x-0.5
+            y2 = y
+            z2 = 0.707
+            w2 = 0.707
+
+            x3 = x2
+            y3 = y2 + 1.8
+            z3 = 0.0
+            w3 = 1.0
+
+            x4 = x
+            y4 = y + 1.8
+            z4 = 0.707
+            w4 = 0.707
+            
+        # node 1
+        print ("node 1")
+        
+        goal = MoveBaseGoal()
+        goal.target_pose.header.frame_id = "map"
+        goal.target_pose.header.stamp = rospy.Time.now()
+        goal.target_pose.pose.position.x = x
+        goal.target_pose.pose.position.y = y
+        goal.target_pose.pose.orientation.x = 0.0
+        goal.target_pose.pose.orientation.y = 0.0
+        print(z1)
+        goal.target_pose.pose.orientation.z = z1
+        goal.target_pose.pose.orientation.w = w1
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+        # node 2
+        print ("node 2")
+        goal.target_pose.pose.position.x = x2
+        goal.target_pose.pose.position.y = y2
+        goal.target_pose.pose.orientation.x = 0.0
+        goal.target_pose.pose.orientation.y = 0.0
+        goal.target_pose.pose.orientation.z = z2
+        goal.target_pose.pose.orientation.w = w2
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+
+        # node 3
+        print ("node 3")
+        goal.target_pose.pose.position.x = x3
+        goal.target_pose.pose.position.y = y3
+        goal.target_pose.pose.orientation.x = 0.0
+        goal.target_pose.pose.orientation.y = 0.0
+        goal.target_pose.pose.orientation.z = z3
+        goal.target_pose.pose.orientation.w = w3
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+
+        # node 2
+        print ("node 4")
+        goal.target_pose.pose.position.x = x4
+        goal.target_pose.pose.position.y = y4
+        goal.target_pose.pose.orientation.x = 0.0
+        goal.target_pose.pose.orientation.y = 0.0
+        goal.target_pose.pose.orientation.z = z4
+        goal.target_pose.pose.orientation.w = w4
+        self.client.send_goal(goal)
+        self.client.wait_for_result()
+
+    def direction(self,z,w):
+        # 1 = up, 2 = down , 3 = right , 4 = left
+        if abs(z-0.707)<0.2 and abs(w-0.707)<0.2:
+            return 1
+        elif abs(z+0.707)<0.2 and abs(w-0.707)<0.2:
+            return 2
+        elif abs(z-0.0)<0.2 and abs(w-1.0)<0.2:
+            return 3
+        elif abs(z-1.0)<0.2 and abs(w-0.0)<0.2:
+            return 4
+    
+    def findyaw(self,cur_node,next_node,pos):
+        print(abs(pos[0]-next_node[0]))
+        print(abs(pos[1]-next_node[1]))
+        if cur_node[0]==next_node[0]:
+
+            if abs(pos[0]-next_node[0])>1:
+                self.shouldStop=True
+            else:
+                self.shouldStop=False
+
+            if cur_node[1]>next_node[1]:
+                return -0.7071,0.7071
+            else:
+                return 0.7071,0.7071
+        else:
+            if abs(pos[1]-next_node[1])>1:
+                self.shouldStop=True
+            else:
+                self.shouldStop=False
+
+            if cur_node[0]>next_node[0]:
+                return 1.0,0.0
+            else:
+                return 0.0,1.0
+
+if __name__ == '__main__':
+    try:
+        rospy.init_node('movebase_client_py')
+        node = FourColors()
+    except rospy.ROSInterruptException:
+        rospy.loginfo("Navigation test finished.")

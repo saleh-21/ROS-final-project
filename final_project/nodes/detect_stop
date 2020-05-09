@@ -1,0 +1,56 @@
+#!/usr/bin/env python
+import time
+import rospy
+import numpy as np
+import cv2
+from cv_bridge import CvBridge
+from std_msgs.msg import Float64
+from sensor_msgs.msg import Image
+
+class DetectLane():
+    def __init__(self):
+        self.cvBridge = CvBridge()
+        # print("init done")
+        self.sub_image = rospy.Subscriber('/imageStop', Image, self.cbFindStop, queue_size = 1)
+        self.pub_stop = rospy.Publisher('stop', Float64, queue_size = 1)
+
+    def cbFindStop(self,image_msg):
+        cv_image = self.cvBridge.imgmsg_to_cv2(image_msg, "bgr8")
+        # print("image ready")
+        self.maskStop(cv_image,0,999)
+    
+    
+    def maskStop(self, image,x,y):
+        # print("check image")
+        # Convert BGR to HSV
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        # cv2.imshow('image',hsv)
+        # cv2.waitKey(0)
+        # cv2.destroyAllWindows()
+        # define range of yellow color in HSV
+        low = np.array([0,0,70])
+        up = np.array([0,0,255])
+        # Threshold the HSV image to get only white colors
+        mask = cv2.inRange(hsv, low, up)
+        how_much_short = 100
+        # for i in range(0, 600):
+        #     if np.count_nonzero(mask[i,x:y]) > 0:
+        #         how_much_short -= 1
+        count = np.count_nonzero(mask)
+        if count >200000 :
+             msg_desired_center = Float64()
+             msg_desired_center.data = 1.0
+            #  print(count)
+             self.pub_stop.publish(msg_desired_center)
+        # print (how_much_short)
+        # cv2.imshow("Image window", image)
+        # cv2.waitKey(0)
+        return
+    
+    def main(self):
+        rospy.spin()
+
+if __name__ == '__main__':
+    rospy.init_node('detect_lane')
+    node = DetectLane()
+    node.main()

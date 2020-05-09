@@ -1,0 +1,5 @@
+roslaunch final_project track.launch
+
+roslaunch turtlebot3_navigation turtlebot3_navigation.launch map_file:=$HOME/map.yaml
+
+roslaunch final_project solve.launch 

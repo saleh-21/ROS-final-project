@@ -1,0 +1,9 @@
+<launch>
+  <node pkg="final_project" type="four_colors" name="four_colors" output="screen"></node>
+  <!--Calibration is done by config file passed as rosparam. Setting calibration_mode you can do a manual configuration--> 
+  <arg name="calibration_mode" default="action" doc="calibration_mode type [calibration, action]"/>
+  <!-- image projection -->
+  <node pkg="final_project" type="image_projection" name="image_projection" output="screen"></node>
+  <!-- lane detect -->
+  <node pkg="final_project" type="detect_stop" name="detect_stop" output="screen"></node>
+</launch>
